@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ULTRAKILL 2D HTML5</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const V_WIDTH = 1280;
+        const V_HEIGHT = 720;
+
+        let dpr = window.devicePixelRatio || 1;
+        let scale = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        function resizeCanvas() {
+            dpr = window.devicePixelRatio || 1;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+
+            const scaleX = w / V_WIDTH;
+            const scaleY = h / V_HEIGHT;
+            scale = Math.min(scaleX, scaleY);
+
+            offsetX = (w - V_WIDTH * scale) / 2;
+            offsetY = (h - V_HEIGHT * scale) / 2;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+        const keys = {};
+        const mouse = { x: V_WIDTH / 2, y: V_HEIGHT / 2, left: false, right: false };
+
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (e.code >= 'Digit1' && e.code <= 'Digit7') {
+                player.switchWeapon(parseInt(e.code.replace('Digit', '')) - 1);
+            }
+            if (e.code === 'KeyF') player.parry();
+            if (e.code === 'KeyR' && gameOver) resetGame();
+        });
+
+        window.addEventListener('keyup', e => {
+            keys[e.code] = false;
+        });
+
+        function clientToVirtual(cx, cy) {
+            const rect = canvas.getBoundingClientRect();
+            const px = (cx - rect.left);
+            const py = (cy - rect.top);
+            return {
+                x: (px - offsetX) / scale,
+                y: (py - offsetY) / scale
+            };
+        }
+
+        window.addEventListener('mousemove', e => {
+            if (!isMobile) {
+                const pos = clientToVirtual(e.clientX, e.clientY);
+                mouse.x = pos.x;
+                mouse.y = pos.y;
+            }
+        });
+
+        window.addEventListener('mousedown', e => {
+            if (!isMobile) {
+                if (e.button === 0) mouse.left = true;
+                if (e.button === 2) mouse.right = true;
+            }
+        });
+
+        window.addEventListener('mouseup', e => {
+            if (!isMobile) {
+                if (e.button === 0) mouse.left = false;
+                if (e.button === 2) mouse.right = false;
+            }
+        });
+
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        const touchState = {
+            joystick: { active: false, id: null, startX: 0, startY: 0, currX: 0, currY: 0, dx: 0, dy: 0 },
+            aim: { active: false, id: null, lastX: 0, lastY: 0 },
+            buttons: {}
+        };
+
+        const mobileBtns = [
+            { id: 'jump', label: 'JUMP', x: V_WIDTH - 120, y: V_HEIGHT - 120, r: 35 },
+            { id: 'dash', label: 'DASH', x: V_WIDTH - 200, y: V_HEIGHT - 90, r: 30 },
+            { id: 'slide', label: 'SLIDE', x: V_WIDTH - 120, y: V_HEIGHT - 200, r: 30 },
+            { id: 'parry', label: 'PARRY', x: V_WIDTH - 200, y: V_HEIGHT - 170, r: 30 },
+            { id: 'fire', label: 'FIRE', x: V_WIDTH - 90, y: V_HEIGHT - 290, r: 40 },
+            { id: 'alt', label: 'ALT', x: V_WIDTH - 180, y: V_HEIGHT - 270, r: 35 },
+            { id: 'prev', label: '<', x: 40, y: V_HEIGHT - 40, r: 25 },
+            { id: 'next', label: '>', x: 100, y: V_HEIGHT - 40, r: 25 },
+            { id: 'restart', label: 'RESTART', x: V_WIDTH / 2, y: V_HEIGHT / 2 + 100, r: 50, showOnlyGameOver: true }
+        ];
+
+        window.addEventListener('touchstart', handleTouch, { passive: false });
+        window.addEventListener('touchmove', handleTouch, { passive: false });
+        window.addEventListener('touchend', handleTouch, { passive: false });
+        window.addEventListener('touchcancel', handleTouch, { passive: false });
+
+        function handleTouch(e) {
+            e.preventDefault();
+            const touches = e.touches;
+
+            let activeJoy = false;
+            let activeAim = false;
+            const newBtns = {};
+
+            for (let i = 0; i < touches.length; i++) {
+                const t = touches[i];
+                const pos = clientToVirtual(t.clientX, t.clientY);
+
+                let hitBtn = false;
+                for (let b of mobileBtns) {
+                    if (b.showOnlyGameOver && !gameOver) continue;
+                    if (!b.showOnlyGameOver && gameOver) continue;
+
+                    const dist = Math.hypot(pos.x - b.x, pos.y - b.y);
+                    if (dist < b.r + 15) {
+                        newBtns[b.id] = true;
+                        hitBtn = true;
+                        if (!touchState.buttons[b.id]) {
+                            if (b.id === 'jump') player.jump();
+                            if (b.id === 'dash') player.dash();
+                            if (b.id === 'slide') player.startSlide();
+                            if (b.id === 'parry') player.parry();
+                            if (b.id === 'prev') player.cycleWeapon(-1);
+                            if (b.id === 'next') player.cycleWeapon(1);
+                            if (b.id === 'restart' && gameOver) resetGame();
+                        }
+                        break;
+                    }
+                }
+
+                if (hitBtn) continue;
+
+                if (pos.x < V_WIDTH / 2) {
+                    if (!touchState.joystick.active || touchState.joystick.id === t.identifier) {
+                        if (!touchState.joystick.active) {
+                            touchState.joystick.startX = pos.x;
+                            touchState.joystick.startY = pos.y;
+                        }
+                        touchState.joystick.active = true;
+                        touchState.joystick.id = t.identifier;
+                        touchState.joystick.currX = pos.x;
+                        touchState.joystick.currY = pos.y;
+
+                        let dx = pos.x - touchState.joystick.startX;
+                        let dy = pos.y - touchState.joystick.startY;
+                        let maxR = 50;
+                        let len = Math.hypot(dx, dy);
+                        if (len > maxR) {
+                            dx = (dx / len) * maxR;
+                            dy = (dy / len) * maxR;
+                        }
+                        touchState.joystick.dx = dx / maxR;
+                        touchState.joystick.dy = dy / maxR;
+                        activeJoy = true;
+                    }
+                } else {
+                    if (!touchState.aim.active || touchState.aim.id === t.identifier) {
+                        if (touchState.aim.active) {
+                            let deltaX = pos.x - touchState.aim.lastX;
+                            let deltaY = pos.y - touchState.aim.lastY;
+                            mouse.x += deltaX * 1.5;
+                            mouse.y += deltaY * 1.5;
+                            mouse.x = Math.max(0, Math.min(V_WIDTH, mouse.x));
+                            mouse.y = Math.max(0, Math.min(V_HEIGHT, mouse.y));
+                        }
+                        touchState.aim.active = true;
+                        touchState.aim.id = t.identifier;
+                        touchState.aim.lastX = pos.x;
+                        touchState.aim.lastY = pos.y;
+                        activeAim = true;
+                    }
+                }
+            }
+
+            if (!activeJoy) touchState.joystick.active = false;
+            if (!activeAim) touchState.aim.active = false;
+            touchState.buttons = newBtns;
+        }
+
+        const camera = { x: 0, y: 0, shake: 0 };
+        const groundY = 600;
+
+        let particles = [];
+        function createParticle(x, y, vx, vy, color, size, life) {
+            particles.push({ x, y, vx, vy, color, size, life, maxLife: life });
+        }
+
+        function createExplosion(x, y, radius, damage, isNuke = false) {
+            camera.shake = isNuke ? 30 : 15;
+            if (isNuke) flashAlpha = 1.0;
+
+            let count = isNuke ? 100 : 40;
+            for (let i = 0; i < count; i++) {
+                let ang = Math.random() * Math.PI * 2;
+                let spd = Math.random() * (isNuke ? 15 : 8) + 2;
+                createParticle(x, y, Math.cos(ang) * spd, Math.sin(ang) * spd, isNuke ? '#ffffff' : (Math.random() > 0.5 ? '#ff4400' : '#ffcc00'), Math.random() * 6 + 2, 30);
+            }
+
+            enemies.forEach(e => {
+                let dist = Math.hypot(e.x - x, e.y - y);
+                if (dist < radius) {
+                    let d = damage * (1 - dist / radius);
+                    e.takeDamage(d, 'explosion');
+                }
+            });
+
+            let pDist = Math.hypot(player.x - x, player.y - y);
+            if (pDist < radius * 0.7) {
+                player.takeDamage(15);
+            }
+        }
+
+        let flashAlpha = 0;
+
+        let projectiles = [];
+        let coins = [];
+        let cores = [];
+        let rockets = [];
+        let enemies = [];
+        let shockwaves = [];
+
+        class Player {
+            constructor() {
+                this.x = V_WIDTH / 2;
+                this.y = groundY - 40;
+                this.w = 30;
+                this.h = 50;
+                this.vx = 0;
+                this.vy = 0;
+                this.speed = 8;
+                this.hp = 100;
+                this.maxHp = 100;
+                this.isGrounded = false;
+                this.isSliding = false;
+                this.isSlamming = false;
+                this.dashCooldown = 0;
+                this.currentWeapon = 0;
+                this.weaponCooldown = 0;
+                this.altCooldown = 0;
+                this.onRocket = null;
+            }
+
+            reset() {
+                this.x = V_WIDTH / 2;
+                this.y = groundY - 40;
+                this.vx = 0;
+                this.vy = 0;
+                this.hp = 100;
+                this.isGrounded = false;
+                this.isSliding = false;
+                this.isSlamming = false;
+                this.onRocket = null;
+            }
+
+            switchWeapon(idx) {
+                if (idx >= 0 && idx < 7) {
+                    this.currentWeapon = idx;
+                    styleSystem.addScore(10, 'WEAPON SWITCH');
+                }
+            }
+
+            cycleWeapon(dir) {
+                this.currentWeapon = (this.currentWeapon + dir + 7) % 7;
+            }
+
+            jump() {
+                if (this.isGrounded || this.onRocket) {
+                    this.vy = this.isSliding ? -16 : -13;
+                    if (this.isSliding) {
+                        this.vx *= 1.4;
+                        styleSystem.addScore(20, 'SLIDE JUMP');
+                    }
+                    this.isGrounded = false;
+                    this.isSliding = false;
+                    this.onRocket = null;
+                }
+            }
+
+            dash() {
+                if (this.dashCooldown <= 0) {
+                    let moveDir = 0;
+                    if (keys['KeyA'] || (touchState.joystick.active && touchState.joystick.dx < -0.3)) moveDir = -1;
+                    if (keys['KeyD'] || (touchState.joystick.active && touchState.joystick.dx > 0.3)) moveDir = 1;
+                    if (moveDir === 0) moveDir = mouse.x > this.x ? 1 : -1;
+
+                    this.vx = moveDir * 22;
+                    this.dashCooldown = 35;
+                    for (let i = 0; i < 10; i++) {
+                        createParticle(this.x, this.y + this.h / 2, -this.vx * 0.2, (Math.random() - 0.5) * 2, '#00ffff', 4, 15);
+                    }
+                }
+            }
+
+            startSlide() {
+                if (this.isGrounded) {
+                    this.isSliding = true;
+                } else {
+                    this.isSlamming = true;
+                    this.vy = 20;
+                    this.vx = 0;
+                }
+            }
+
+            parry() {
+                let success = false;
+
+                projectiles.forEach(p => {
+                    if (p.isEnemy && Math.hypot(p.x - this.x, p.y - this.y) < 60) {
+                        p.isEnemy = false;
+                        let angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+                        p.vx = Math.cos(angle) * 25;
+                        p.vy = Math.sin(angle) * 25;
+                        p.damage *= 3;
+                        success = true;
+                    }
+                });
+
+                enemies.forEach(e => {
+                    if (Math.hypot(e.x - this.x, e.y - this.y) < 70) {
+                        e.takeDamage(50, 'PARRY');
+                        e.vx = (e.x > this.x ? 1 : -1) * 15;
+                        e.vy = -5;
+                        success = true;
+                    }
+                });
+
+                projectiles.forEach(p => {
+                    if (p.isPellet && Math.hypot(p.x - this.x, p.y - this.y) < 60 && !p.supercharged) {
+                        p.supercharged = true;
+                        p.damage *= 2.5;
+                        p.vx *= 1.8;
+                        p.vy *= 1.8;
+                        p.color = '#ff0055';
+                        success = true;
+                    }
+                });
+
+                if (success) {
+                    this.hp = Math.min(this.maxHp, this.hp + 30);
+                    styleSystem.addScore(100, '+ PARRY');
+                    camera.shake = 10;
+                    for (let i = 0; i < 20; i++) {
+                        let a = Math.random() * Math.PI * 2;
+                        createParticle(this.x, this.y, Math.cos(a) * 10, Math.sin(a) * 10, '#00ffff', 4, 20);
+                    }
+                }
+            }
+
+            takeDamage(amount) {
+                this.hp -= amount;
+                camera.shake = 12;
+                if (this.hp <= 0) {
+                    this.hp = 0;
+                    gameOver = true;
+                }
+            }
+
+            update() {
+                if (this.dashCooldown > 0) this.dashCooldown--;
+                if (this.weaponCooldown > 0) this.weaponCooldown--;
+                if (this.altCooldown > 0) this.altCooldown--;
+
+                let moveLeft = keys['KeyA'] || (touchState.joystick.active && touchState.joystick.dx < -0.3);
+                let moveRight = keys['KeyD'] || (touchState.joystick.active && touchState.joystick.dx > 0.3);
+                let isCrouch = keys['KeyC'] || touchState.buttons['slide'];
+
+                if (isCrouch && this.isGrounded) this.isSliding = true;
+                if (!isCrouch && this.isSliding) this.isSliding = false;
+
+                if (keys['KeyS'] || (touchState.joystick.active && touchState.joystick.dy > 0.5)) {
+                    if (!this.isGrounded && !this.isSlamming) {
+                        this.isSlamming = true;
+                        this.vy = 22;
+                    }
+                }
+
+                if (this.isSliding) {
+                    this.h = 25;
+                    this.vx *= 0.98;
+                } else {
+                    this.h = 50;
+                    if (moveLeft) this.vx = -this.speed;
+                    else if (moveRight) this.vx = this.speed;
+                    else this.vx *= 0.8;
+                }
+
+                if (!this.onRocket) {
+                    this.vy += 0.6;
+                } else {
+                    this.x = this.onRocket.x;
+                    this.y = this.onRocket.y - 30;
+                    this.vx = 0;
+                    this.vy = 0;
+                    if (keys['Space'] || touchState.buttons['jump']) {
+                        this.jump();
+                    }
+                }
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.y + this.h / 2 >= groundY) {
+                    this.y = groundY - this.h / 2;
+                    this.vy = 0;
+                    if (!this.isGrounded && this.isSlamming) {
+                        camera.shake = 15;
+                        shockwaves.push({ x: this.x, y: groundY, radius: 10, maxRadius: 150 });
+                        enemies.forEach(e => {
+                            if (Math.abs(e.x - this.x) < 150) {
+                                e.vy = -12;
+                                e.takeDamage(20, 'SLAM');
+                            }
+                        });
+                        this.isSlamming = false;
+                    }
+                    this.isGrounded = true;
+                } else {
+                    this.isGrounded = false;
+                }
+
+                if (this.x < 20) this.x = 20;
+                if (this.x > V_WIDTH - 20) this.x = V_WIDTH - 20;
+
+                let isFire = mouse.left || touchState.buttons['fire'];
+                let isAlt = mouse.right || touchState.buttons['alt'];
+
+                if (isFire && this.weaponCooldown <= 0) {
+                    this.shootPrimary();
+                } else if (isAlt && this.altCooldown <= 0) {
+                    this.shootAlt();
+                }
+            }
+
+            shootPrimary() {
+                let angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+
+                switch (this.currentWeapon) {
+                    case 0:
+                        this.weaponCooldown = 12;
+                        hitscan(this.x, this.y, angle, 25, '#00ffff', 1);
+                        break;
+                    case 1:
+                        this.weaponCooldown = 14;
+                        hitscan(this.x, this.y, angle, 20, '#00ffff', 1);
+                        break;
+                    case 2:
+                        this.weaponCooldown = 15;
+                        hitscan(this.x, this.y, angle, 22, '#00ffff', 1);
+                        break;
+                    case 3:
+                        this.weaponCooldown = 35;
+                        for (let i = -3; i <= 3; i++) {
+                            let spreadAngle = angle + (i * 0.08);
+                            projectiles.push({
+                                x: this.x, y: this.y,
+                                vx: Math.cos(spreadAngle) * 14,
+                                vy: Math.sin(spreadAngle) * 14,
+                                damage: 12, isPellet: true, isEnemy: false, supercharged: false,
+                                life: 40
+                            });
+                        }
+                        break;
+                    case 4:
+                        this.weaponCooldown = 25;
+                        let speedMod = Math.hypot(this.vx, this.vy);
+                        let dmg = 40 + speedMod * 5;
+                        enemies.forEach(e => {
+                            if (Math.hypot(e.x - this.x, e.y - this.y) < 90) {
+                                e.takeDamage(dmg, 'JACKHAMMER');
+                                styleSystem.addScore(40, '+ IMPACT');
+                            }
+                        });
+                        this.vx = -Math.cos(angle) * (12 + speedMod);
+                        this.vy = -Math.sin(angle) * (12 + speedMod);
+                        camera.shake = 10;
+                        break;
+                    case 5:
+                        this.weaponCooldown = 90;
+                        hitscan(this.x, this.y, angle, 120, '#ff0000', 5, true);
+                        camera.shake = 20;
+                        break;
+                    case 6:
+                        this.weaponCooldown = 40;
+                        rockets.push(new Rocket(this.x, this.y, Math.cos(angle) * 12, Math.sin(angle) * 12, false));
+                        break;
+                }
+            }
+
+            shootAlt() {
+                let angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+
+                switch (this.currentWeapon) {
+                    case 0:
+                        this.altCooldown = 60;
+                        hitscan(this.x, this.y, angle, 80, '#00ffff', 7);
+                        camera.shake = 12;
+                        break;
+                    case 1:
+                        this.altCooldown = 45;
+                        coins.push(new Coin(this.x, this.y, this.vx * 0.5 + Math.cos(angle - 0.3) * 8, -8));
+                        break;
+                    case 2:
+                        this.altCooldown = 50;
+                        let blastRadius = 250;
+                        for (let i = projectiles.length - 1; i >= 0; i--) {
+                            if (Math.hypot(projectiles[i].x - this.x, projectiles[i].y - this.y) < blastRadius) {
+                                projectiles.splice(i, 1);
+                            }
+                        }
+                        for (let i = cores.length - 1; i >= 0; i--) {
+                            if (Math.hypot(cores[i].x - this.x, cores[i].y - this.y) < blastRadius) {
+                                cores.splice(i, 1);
+                            }
+                        }
+                        for (let i = rockets.length - 1; i >= 0; i--) {
+                            if (Math.hypot(rockets[i].x - this.x, rockets[i].y - this.y) < blastRadius) {
+                                rockets.splice(i, 1);
+                            }
+                        }
+                        camera.shake = 15;
+                        for (let i = 0; i < 30; i++) {
+                            let a = Math.random() * Math.PI * 2;
+                            createParticle(this.x, this.y, Math.cos(a) * 12, Math.sin(a) * 12, '#ff00ff', 3, 20);
+                        }
+                        styleSystem.addScore(50, '+ DISARM');
+                        break;
+                    case 3:
+                        this.altCooldown = 70;
+                        cores.push(new Core(this.x, this.y, Math.cos(angle) * 10, Math.sin(angle) * 10 - 3));
+                        break;
+                    case 4:
+                        this.altCooldown = 40;
+                        this.vx = Math.cos(angle) * 25;
+                        this.vy = Math.sin(angle) * 25;
+                        break;
+                    case 5:
+                        break;
+                    case 6:
+                        this.altCooldown = 20;
+                        rockets.forEach(r => {
+                            r.frozen = !r.frozen;
+                        });
+                        break;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                ctx.fillStyle = this.dashCooldown > 20 ? '#00ffff' : '#ff0055';
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 10;
+
+                if (this.isSliding) {
+                    ctx.fillRect(-this.h / 2, -this.w / 2, this.h, this.w);
+                } else {
+                    ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
+                }
+
+                let angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+                ctx.rotate(angle);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(5, -3, 20, 6);
+
+                ctx.restore();
+            }
+        }
+
+        function hitscan(startX, startY, angle, damage, color, maxPenetration, isRailcannon = false) {
+            let dirX = Math.cos(angle);
+            let dirY = Math.sin(angle);
+            let rayLength = 1400;
+
+            let endX = startX + dirX * rayLength;
+            let endY = startY + dirY * rayLength;
+
+            for (let i = 0; i < rayLength; i += 20) {
+                let px = startX + dirX * i;
+                let py = startY + dirY * i;
+                createParticle(px, py, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, color, isRailcannon ? 5 : 2, 10);
+            }
+
+            for (let i = coins.length - 1; i >= 0; i--) {
+                let c = coins[i];
+                let distToRay = Math.abs((endY - startY) * c.x - (endX - startX) * c.y + endX * startY - endY * startX) / Math.hypot(endY - startY, endX - startX);
+
+                if (distToRay < 25) {
+                    let isSplit = c.isPeakGlint();
+                    coins.splice(i, 1);
+                    styleSystem.addScore(c.isPeakGlint() ? 150 : 80, c.isPeakGlint() ? '+ ULTRARICOSHOT' : '+ RICOSHOT');
+
+                    let targets = [...enemies].sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y));
+
+                    let targetCount = isSplit ? 2 : 1;
+                    for (let t = 0; t < Math.min(targetCount, targets.length); t++) {
+                        let target = targets[t];
+                        let bounceAngle = Math.atan2(target.y - c.y, target.x - c.x);
+                        hitscan(c.x, c.y, bounceAngle, damage * 2, '#ffff00', 1);
+                    }
+                    return;
+                }
+            }
+
+            cores.forEach(core => {
+                let distToRay = Math.abs((endY - startY) * core.x - (endX - startX) * core.y + endX * startY - endY * startX) / Math.hypot(endY - startY, endX - startX);
+                if (distToRay < 20) {
+                    core.explode(isRailcannon);
+                }
+            });
+
+            let hitCount = 0;
+            enemies.forEach(e => {
+                if (hitCount >= maxPenetration) return;
+
+                let distToRay = Math.abs((endY - startY) * e.x - (endX - startX) * e.y + endX * startY - endY * startX) / Math.hypot(endY - startY, endX - startX);
+                if (distToRay < e.radius) {
+                    e.takeDamage(damage, isRailcannon ? 'RAILCANNON' : 'HITSCAN');
+                    hitCount++;
+                }
+            });
+        }
+
+        class Coin {
+            constructor(x, y, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.time = 0;
+            }
+
+            isPeakGlint() {
+                return Math.abs(this.vy) < 1.5;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.3;
+                this.time++;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 6, 0, Math.PI * 2);
+                ctx.fillStyle = this.isPeakGlint() ? '#ffffff' : '#ffd700';
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 10;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Core {
+            constructor(x, y, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.exploded = false;
+            }
+
+            explode(isNuke = false) {
+                if (this.exploded) return;
+                this.exploded = true;
+                createExplosion(this.x, this.y, isNuke ? 350 : 150, isNuke ? 300 : 100, isNuke);
+                styleSystem.addScore(isNuke ? 250 : 100, isNuke ? '+ NUKE' : '+ CORE EXPLOSION');
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.2;
+
+                if (this.y >= groundY) {
+                    this.y = groundY;
+                    this.vx *= 0.8;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff5500';
+                ctx.shadowColor = '#ff5500';
+                ctx.shadowBlur = 8;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Rocket {
+            constructor(x, y, vx, vy, frozen = false) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.frozen = frozen;
+                this.timer = 0;
+                this.freezeTimer = 0;
+            }
+
+            update() {
+                this.timer++;
+                if (this.frozen) {
+                    this.freezeTimer++;
+                    let pDist = Math.hypot(player.x - this.x, player.y - (this.y - 15));
+                    if (pDist < 25) {
+                        player.onRocket = this;
+                    }
+                } else {
+                    if (player.onRocket === this) {
+                        player.x = this.x;
+                        player.y = this.y - 25;
+                    }
+
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    enemies.forEach(e => {
+                        if (Math.hypot(e.x - this.x, e.y - this.y) < e.radius + 10) {
+                            this.explode();
+                        }
+                    });
+
+                    if (this.timer > 180 || this.y >= groundY) {
+                        this.explode();
+                    }
+                }
+            }
+
+            explode() {
+                let dmg = this.freezeTimer > 60 ? 120 : 60;
+                createExplosion(this.x, this.y, 120, dmg);
+                if (player.onRocket === this) player.onRocket = null;
+                rockets.splice(rockets.indexOf(this), 1);
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(Math.atan2(this.vy, this.vx));
+                ctx.fillStyle = this.frozen ? '#00ffff' : '#ffcc00';
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 10;
+                ctx.fillRect(-12, -4, 24, 8);
+                ctx.restore();
+            }
+        }
+
+        class Enemy {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                this.vx = 0;
+                this.vy = 0;
+
+                if (type === 'filth') {
+                    this.hp = 30; this.maxHp = 30; this.radius = 18; this.speed = 4.5;
+                } else if (type === 'stray') {
+                    this.hp = 50; this.maxHp = 50; this.radius = 22; this.speed = 2; this.shootTimer = 0;
+                } else if (type === 'zoiky') {
+                    this.hp = 40; this.maxHp = 40; this.radius = 16; this.speed = 3.5; this.dashTimer = 0;
+                } else if (type === 'boss') {
+                    this.hp = 800; this.maxHp = 800; this.radius = 50; this.speed = 2.5; this.bossTimer = 0;
+                }
+            }
+
+            takeDamage(amount, source) {
+                this.hp -= amount;
+                createParticle(this.x, this.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, '#ff0000', 4, 15);
+
+                if (this.hp <= 0) {
+                    styleSystem.addScore(this.type === 'boss' ? 1000 : 50, '+ KILL');
+                    if (this.y < groundY - 50) styleSystem.addScore(30, '+ AIRBORNE KILL');
+                }
+            }
+
+            update() {
+                let dx = player.x - this.x;
+                let dy = player.y - this.y;
+                let dist = Math.hypot(dx, dy);
+
+                if (this.type === 'filth') {
+                    this.vx = (dx / dist) * this.speed;
+                    this.x += this.vx;
+                    if (this.y < groundY - this.radius) this.vy += 0.5;
+                    this.y += this.vy;
+
+                    if (this.y >= groundY - this.radius) {
+                        this.y = groundY - this.radius;
+                        this.vy = 0;
+                        if (dist < 80 && Math.random() < 0.03) this.vy = -8;
+                    }
+
+                    if (dist < 30) player.takeDamage(10);
+
+                } else if (this.type === 'stray') {
+                    if (dist < 300) this.vx = -(dx / dist) * this.speed;
+                    else if (dist > 400) this.vx = (dx / dist) * this.speed;
+                    else this.vx = 0;
+
+                    this.x += this.vx;
+
+                    this.shootTimer++;
+                    if (this.shootTimer > 120) {
+                        this.shootTimer = 0;
+                        let a = Math.atan2(dy, dx);
+                        projectiles.push({
+                            x: this.x, y: this.y,
+                            vx: Math.cos(a) * 5, vy: Math.sin(a) * 5,
+                            damage: 15, isEnemy: true
+                        });
+                    }
+
+                } else if (this.type === 'zoiky') {
+                    this.dashTimer++;
+                    if (this.dashTimer > 90) {
+                        this.vx = (dx / dist) * 10;
+                        this.vy = (dy / dist) * 10;
+                        if (this.dashTimer > 110) this.dashTimer = 0;
+                    } else {
+                        this.vx = Math.sin(Date.now() * 0.005) * 3;
+                        this.vy = Math.cos(Date.now() * 0.005) * 3;
+                    }
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    if (dist < 25) player.takeDamage(12);
+
+                } else if (this.type === 'boss') {
+                    this.bossTimer++;
+                    this.vx = (dx / dist) * this.speed;
+                    this.x += this.vx;
+
+                    if (this.y < groundY - this.radius) this.vy += 0.5;
+                    this.y += this.vy;
+                    if (this.y >= groundY - this.radius) {
+                        this.y = groundY - this.radius;
+                        this.vy = 0;
+                    }
+
+                    if (this.bossTimer % 180 === 0) {
+                        shockwaves.push({ x: this.x, y: groundY, radius: 10, maxRadius: 300 });
+                    }
+
+                    if (this.bossTimer % 240 === 0) {
+                        for (let i = -2; i <= 2; i++) {
+                            let a = Math.atan2(dy, dx) + i * 0.2;
+                            projectiles.push({
+                                x: this.x, y: this.y,
+                                vx: Math.cos(a) * 7, vy: Math.sin(a) * 7,
+                                damage: 20, isEnemy: true
+                            });
+                        }
+                    }
+
+                    if (dist < 60) player.takeDamage(25);
+                }
+
+                if (this.type !== 'zoiky' && this.y > groundY - this.radius) {
+                    this.y = groundY - this.radius;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                if (this.type === 'filth') ctx.fillStyle = '#ff3300';
+                else if (this.type === 'stray') ctx.fillStyle = '#ffaa00';
+                else if (this.type === 'zoiky') ctx.fillStyle = '#aa00ff';
+                else if (this.type === 'boss') ctx.fillStyle = '#ff0033';
+
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 12;
+
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (this.type === 'boss') {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(-40, -60, 80, 8);
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(-40, -60, 80 * (this.hp / this.maxHp), 8);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class StyleSystem {
+            constructor() {
+                this.score = 0;
+                this.rankIndex = 0;
+                this.ranks = ['D', 'C', 'B', 'A', 'S', 'SSS'];
+                this.decayTimer = 0;
+                this.recentActions = [];
+            }
+
+            addScore(pts, action) {
+                this.score += pts;
+                this.decayTimer = 0;
+
+                this.recentActions.push({ text: action, time: 60 });
+                if (this.recentActions.length > 5) this.recentActions.shift();
+
+                if (this.score > 2500) this.rankIndex = 5;
+                else if (this.score > 1800) this.rankIndex = 4;
+                else if (this.score > 1200) this.rankIndex = 3;
+                else if (this.score > 700) this.rankIndex = 2;
+                else if (this.score > 300) this.rankIndex = 1;
+                else this.rankIndex = 0;
+            }
+
+            update() {
+                this.decayTimer++;
+                if (this.decayTimer > 180) {
+                    this.score = Math.max(0, this.score - 2);
+                }
+
+                for (let i = this.recentActions.length - 1; i >= 0; i--) {
+                    this.recentActions[i].time--;
+                    if (this.recentActions[i].time <= 0) this.recentActions.splice(i, 1);
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.textAlign = 'right';
+                ctx.font = 'bold 28px Courier New';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(`STYLE: ${this.score}`, V_WIDTH - 30, 40);
+
+                let colors = ['#888', '#00ff00', '#00ffff', '#ffff00', '#ffaa00', '#ff0055'];
+                ctx.font = 'italic bold 42px Courier New';
+                ctx.fillStyle = colors[this.rankIndex];
+                ctx.shadowColor = colors[this.rankIndex];
+                ctx.shadowBlur = 15;
+                ctx.fillText(this.ranks[this.rankIndex], V_WIDTH - 30, 85);
+
+                ctx.font = '16px Courier New';
+                ctx.shadowBlur = 0;
+                let yOffset = 115;
+                this.recentActions.forEach(act => {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${act.time / 60})`;
+                    ctx.fillText(act.text, V_WIDTH - 30, yOffset);
+                    yOffset += 20;
+                });
+
+                ctx.restore();
+            }
+        }
+
+        let player = new Player();
+        let styleSystem = new StyleSystem();
+        let currentWave = 1;
+        let waveTimer = 0;
+        let gameOver = false;
+
+        function spawnWave(wave) {
+            enemies = [];
+            let count = 3 + wave * 2;
+
+            if (wave % 10 === 0) {
+                enemies.push(new Enemy(V_WIDTH / 2 + 200, groundY - 60, 'boss'));
+            } else {
+                for (let i = 0; i < count; i++) {
+                    let side = Math.random() < 0.5 ? 50 : V_WIDTH - 50;
+                    let types = ['filth', 'stray', 'zoiky'];
+                    let type = types[Math.floor(Math.random() * types.length)];
+                    let spawnY = type === 'zoiky' ? 200 : groundY - 30;
+                    enemies.push(new Enemy(side + (Math.random() - 0.5) * 100, spawnY, type));
+                }
+            }
+        }
+
+        function resetGame() {
+            player.reset();
+            styleSystem = new StyleSystem();
+            currentWave = 1;
+            projectiles = [];
+            coins = [];
+            cores = [];
+            rockets = [];
+            shockwaves = [];
+            particles = [];
+            gameOver = false;
+            spawnWave(currentWave);
+        }
+
+        spawnWave(currentWave);
+
+        function gameLoop() {
+            if (!gameOver) {
+                player.update();
+                styleSystem.update();
+
+                if (enemies.length === 0) {
+                    waveTimer++;
+                    if (waveTimer > 90) {
+                        currentWave++;
+                        spawnWave(currentWave);
+                        waveTimer = 0;
+                        styleSystem.addScore(200, `+ WAVE ${currentWave} CLEARED`);
+                    }
+                }
+
+                for (let i = projectiles.length - 1; i >= 0; i--) {
+                    let p = projectiles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    if (p.life) {
+                        p.life--;
+                        if (p.life <= 0) { projectiles.splice(i, 1); continue; }
+                    }
+
+                    if (p.x < 0 || p.x > V_WIDTH || p.y < 0 || p.y > V_HEIGHT) {
+                        projectiles.splice(i, 1);
+                        continue;
+                    }
+
+                    if (p.isEnemy) {
+                        if (Math.hypot(p.x - player.x, p.y - player.y) < 25) {
+                            player.takeDamage(p.damage);
+                            projectiles.splice(i, 1);
+                        }
+                    } else {
+                        enemies.forEach(e => {
+                            if (Math.hypot(p.x - e.x, p.y - e.y) < e.radius + 10) {
+                                e.takeDamage(p.damage, 'PROJECTILE');
+                                if (p.supercharged) createExplosion(p.x, p.y, 80, 50);
+                                projectiles.splice(i, 1);
+                            }
+                        });
+                    }
+                }
+
+                coins.forEach(c => c.update());
+                cores.forEach(c => c.update());
+                rockets.forEach(r => r.update());
+
+                for (let i = shockwaves.length - 1; i >= 0; i--) {
+                    let sw = shockwaves[i];
+                    sw.radius += 8;
+                    if (Math.abs(player.x - sw.x) < sw.radius && player.y + player.h / 2 >= groundY - 10) {
+                        player.takeDamage(10);
+                    }
+                    if (sw.radius > sw.maxRadius) shockwaves.splice(i, 1);
+                }
+
+                enemies.forEach((e, idx) => {
+                    e.update();
+                    if (e.hp <= 0) enemies.splice(idx, 1);
+                });
+
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let pt = particles[i];
+                    pt.x += pt.vx;
+                    pt.y += pt.vy;
+                    pt.life--;
+                    if (pt.life <= 0) particles.splice(i, 1);
+                }
+
+                if (flashAlpha > 0) flashAlpha -= 0.05;
+            }
+
+            ctx.save();
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            let shakeX = (Math.random() - 0.5) * camera.shake;
+            let shakeY = (Math.random() - 0.5) * camera.shake;
+            if (camera.shake > 0) camera.shake *= 0.9;
+
+            ctx.translate(offsetX + shakeX, offsetY + shakeY);
+            ctx.scale(scale, scale);
+
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+            ctx.strokeStyle = '#1a1a25';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < V_WIDTH; x += 40) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, V_HEIGHT); ctx.stroke();
+            }
+
+            ctx.fillStyle = '#ff0055';
+            ctx.shadowColor = '#ff0055';
+            ctx.shadowBlur = 15;
+            ctx.fillRect(0, groundY, V_WIDTH, 10);
+            ctx.shadowBlur = 0;
+
+            shockwaves.forEach(sw => {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI, true);
+                ctx.strokeStyle = '#ff0033';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            particles.forEach(pt => {
+                ctx.fillStyle = pt.color;
+                ctx.fillRect(pt.x, pt.y, pt.size, pt.size);
+            });
+
+            coins.forEach(c => c.draw());
+            cores.forEach(c => c.draw());
+            rockets.forEach(r => r.draw());
+            projectiles.forEach(p => {
+                ctx.fillStyle = p.color || (p.isEnemy ? '#ff00aa' : '#ffff00');
+                ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+            });
+
+            enemies.forEach(e => e.draw());
+            if (!gameOver) player.draw();
+
+            if (flashAlpha > 0) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+                ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+            }
+
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(scale, scale);
+
+            ctx.fillStyle = '#222';
+            ctx.fillRect(30, 30, 200, 20);
+            ctx.fillStyle = '#00ffcc';
+            ctx.shadowColor = '#00ffcc';
+            ctx.shadowBlur = 10;
+            ctx.fillRect(30, 30, 200 * (player.hp / player.maxHp), 20);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px Courier New';
+            ctx.fillText(`HP: ${Math.ceil(player.hp)}`, 35, 45);
+
+            ctx.font = 'bold 22px Courier New';
+            ctx.fillText(`WAVE ${currentWave}`, 30, 80);
+
+            const weaponNames = ['PIERCER', 'MARKSMAN', 'SHARPSHOOTER', 'CORE EJECT', 'JACKHAMMER', 'RAILCANNON', 'FREEZEFRAME'];
+            ctx.font = '14px Courier New';
+            weaponNames.forEach((name, idx) => {
+                ctx.fillStyle = idx === player.currentWeapon ? '#00ffff' : '#666';
+                ctx.fillText(`${idx + 1}: ${name}`, 30, 120 + idx * 22);
+            });
+
+            if (isMobile) {
+                if (touchState.joystick.active) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(touchState.joystick.startX, touchState.joystick.startY, 50, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(touchState.joystick.currX, touchState.joystick.currY, 25, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                mobileBtns.forEach(b => {
+                    if (b.showOnlyGameOver && !gameOver) return;
+                    if (!b.showOnlyGameOver && gameOver) return;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                    ctx.fillStyle = touchState.buttons[b.id] ? 'rgba(0, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.2)';
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.font = 'bold 12px Courier New';
+                    ctx.fillText(b.label, b.x, b.y);
+                    ctx.restore();
+                });
+            }
+
+            styleSystem.draw();
+
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+                ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 60px Courier New';
+                ctx.fillStyle = '#ff0033';
+                ctx.shadowColor = '#ff0033';
+                ctx.shadowBlur = 20;
+                ctx.fillText('YOU DIED', V_WIDTH / 2, V_HEIGHT / 2 - 40);
+
+                ctx.shadowBlur = 0;
+                ctx.font = '20px Courier New';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(`SURVIVED UNTIL WAVE ${currentWave}`, V_WIDTH / 2, V_HEIGHT / 2 + 20);
+                ctx.fillText(isMobile ? 'TAP RESTART BUTTON' : 'PRESS "R" TO RESTART', V_WIDTH / 2, V_HEIGHT / 2 + 60);
+            }
+
+            ctx.restore();
+            ctx.restore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
