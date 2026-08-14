@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ULTRA-CYBER 3D SHOOTER</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050508;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .hud-panel {
+            background: rgba(10, 10, 20, 0.65);
+            border: 1px solid #00f3ff;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
+            padding: 10px 15px;
+            color: #00f3ff;
+            text-shadow: 0 0 5px #00f3ff;
+            border-radius: 4px;
+        }
+        #top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        #style-meter {
+            text-align: right;
+            border-color: #ff0055;
+            box-shadow: 0 0 10px rgba(255, 0, 85, 0.3);
+            color: #ff0055;
+            text-shadow: 0 0 5px #ff0055;
+        }
+        #style-rank {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            border: 2px solid #00f3ff;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 2px; height: 2px;
+            background: #ff0055;
+            border-radius: 50%;
+        }
+        #bottom-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        .bar-container {
+            width: 200px;
+            height: 15px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid #00f3ff;
+            margin-top: 5px;
+            position: relative;
+        }
+        .bar-fill {
+            height: 100%;
+            background: #00f3ff;
+            width: 100%;
+            transition: width 0.1s linear;
+        }
+        #dash-bar .bar-fill { background: #ffaa00; }
+        #parry-indicator {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #ffff00;
+            text-shadow: 0 0 10px #ffff00;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(5, 5, 10, 0.9);
+            border: 2px solid #ff0055;
+            padding: 30px;
+            color: #fff;
+            text-align: center;
+            pointer-events: auto;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.5);
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        #instructions h1 { color: #ff0055; margin-bottom: 10px; text-shadow: 0 0 10px #ff0055;}
+        #instructions p { margin: 8px 0; font-size: 14px; line-height: 1.4;}
+        .key { color: #00f3ff; font-weight: bold; }
+        #weapon-list {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .active-weapon { color: #ffff00; font-weight: bold; }
+    </style>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="ui-layer">
+        <div id="top-bar">
+            <div class="hud-panel">
+                <div>HEALTH: <span id="hp-val">100</span></div>
+                <div class="bar-container"><div id="hp-bar" class="bar-fill"></div></div>
+                <div style="margin-top: 5px;">DASH: <span id="dash-val">READY</span></div>
+                <div class="bar-container" id="dash-bar"><div id="dash-fill" class="bar-fill"></div></div>
+            </div>
+            <div id="style-meter" class="hud-panel">
+                <div id="style-rank">D</div>
+                <div>STYLE: <span id="style-score">0</span></div>
+                <div id="style-status" style="font-size: 10px; color: #aaa;">DESTRUCTIVE</div>
+            </div>
+        </div>
+
+        <div id="parry-indicator">PARRY!</div>
+
+        <div id="bottom-bar">
+            <div class="hud-panel">
+                <div>WEAPON: <span id="weapon-name">1. PIERCER</span></div>
+                <div id="weapon-list">
+                    <div id="w1">1. REVOLVER PIERCER</div>
+                    <div id="w2">2. REVOLVER MARKSMAN</div>
+                    <div id="w3">3. REVOLVER SHARPSHOOTER</div>
+                    <div id="w4">4. SHOTGUN CORE EJECT</div>
+                    <div id="w5">5. JACKHAMMER</div>
+                    <div id="w6">6. RED RAILCANNON</div>
+                    <div id="w7">7. FREEZEFRAME ROCKET</div>
+                </div>
+            </div>
+            <div class="hud-panel" style="text-align: right;">
+                <div>WAVE: <span id="wave-val">1</span></div>
+                <div>ENEMIES: <span id="enemies-val">0</span></div>
+                <div>TIME TO BOSS: <span id="boss-timer">120</span>s</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <div id="instructions">
+        <h1>ULTRA-CYBER SHOOTER</h1>
+        <p>Кликните для начала игры</p>
+        <p><span class="key">WASD</span> - Движение | <span class="key">Space</span> - Прыжок</p>
+        <p><span class="key">Shift</span> - Дэш (кд 0.5с) | <span class="key">Ctrl</span> - Слайд / Слэм в воздухе</p>
+        <p><span class="key">F</span> - Парирование (0.3с щит)</p>
+        <p><span class="key">1-7 / Колесико</span> - Переключение оружия</p>
+        <p><span class="key">ЛКМ</span> - Основной огонь | <span class="key">ПКМ</span> - Альт-огонь</p>
+        <p style="color: #888; font-size: 11px; margin-top: 10px;">Замораживайте ракеты (ПКМ №7), запрыгивайте на них, стреляйте по монетам (ПКМ №2), устраивайте Core Nuke (ПКМ №4 + ЛКМ №6)!</p>
+    </div>
+
+    <script>
+        // --- ИНИЦИАЛИЗАЦИЯ СЦЕНЫ И ДВИЖКА ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050508, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        // Свет
+        const ambientLight = new THREE.AmbientLight(0x111122);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0x00f3ff, 0.8);
+        dirLight.position.set(50, 100, 50);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // Переменные состояния Игры
+        let gameStarted = false;
+        let clock = new THREE.Clock();
+        let score = 0;
+        let stylePoints = 0;
+        let wave = 1;
+        let bossTimer = 120;
+
+        // --- КАРТА (Киберпанк Арена) ---
+        const arenaSize = 120;
+        const gridHelper = new THREE.GridHelper(arenaSize, 60, 0xff0055, 0x00f3ff);
+        gridHelper.position.y = 0;
+        scene.add(gridHelper);
+
+        // Пол для физики
+        const floorGeo = new THREE.PlaneGeometry(arenaSize, arenaSize);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a10, roughness: 0.8 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // Ограждения
+        const createWall = (w, h, d, x, y, z) => {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x151525, wireframe: false });
+            const wall = new THREE.Mesh(geo, mat);
+            wall.position.set(x, y, z);
+            scene.add(wall);
+            return wall;
+        };
+        const walls = [
+            createWall(arenaSize, 20, 2, 0, 10, -arenaSize/2),
+            createWall(arenaSize, 20, 2, 0, 10, arenaSize/2),
+            createWall(2, 20, arenaSize, -arenaSize/2, 10, 0),
+            createWall(2, 20, arenaSize, arenaSize/2, 10, 0)
+        ];
+
+        // Колонны для укрытий
+        const pillars = [];
+        for(let i=0; i<8; i++) {
+            const px = (Math.random() - 0.5) * (arenaSize - 30);
+            const pz = (Math.random() - 0.5) * (arenaSize - 30);
+            const pillar = createWall(4, 15, 4, px, 7.5, pz);
+            pillars.push(pillar);
+        }
+
+        // --- ИГРОК И КАМЕРА (Third Person) ---
+        const player = {
+            hp: 100,
+            maxHp: 100,
+            pos: new THREE.Vector3(0, 0, 0),
+            vel: new THREE.Vector3(),
+            radius: 0.8,
+            height: 1.8,
+            isGrounded: false,
+            dashCooldown: 0,
+            dashDuration: 0,
+            isSliding: false,
+            isSlamming: false,
+            parryTimer: 0,
+            speedBuff: 1.0,
+            ridingRocket: null
+        };
+
+        // Визуальная модель игрока
+        const playerGroup = new THREE.Group();
+        const bodyGeo = new THREE.CylinderGeometry(0.5, 0.3, 1.5, 8);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00f3ff, roughness: 0.2 });
+        const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        bodyMesh.position.y = 0.75;
+        playerGroup.add(bodyMesh);
+        scene.add(playerGroup);
+
+        // Орбитальная камера
+        let camYaw = 0;
+        let camPitch = 0.2;
+        const camDistance = 4.5;
+
+        // --- УПРАВЛЕНИЕ ---
+        const keys = {};
+        const mouse = { x: 0, y: 0, lmb: false, rmb: false, lmbPressed: false, rmbPressed: false };
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if(e.code.startsWith('Digit')) {
+                let num = parseInt(e.code.replace('Digit',''));
+                if(num >= 1 && num <= 7) selectWeapon(num - 1);
+            }
+            if(e.code === 'KeyF') triggerParry();
+        });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        document.getElementById('instructions').addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                gameStarted = true;
+                document.getElementById('instructions').style.display = 'none';
+            } else {
+                gameStarted = false;
+                document.getElementById('instructions').style.display = 'block';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!gameStarted) return;
+            camYaw -= e.movementX * 0.003;
+            camPitch -= e.movementY * 0.003;
+            camPitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, camPitch));
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (!gameStarted) return;
+            if (e.button === 0) { mouse.lmb = true; mouse.lmbPressed = true; }
+            if (e.button === 2) { mouse.rmb = true; mouse.rmbPressed = true; }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 0) mouse.lmb = false;
+            if (e.button === 2) mouse.rmb = false;
+        });
+
+        document.addEventListener('wheel', (e) => {
+            if (!gameStarted) return;
+            let dir = Math.sign(e.deltaY);
+            let nextW = (currentWeaponIdx + dir + weapons.length) % weapons.length;
+            selectWeapon(nextW);
+        });
+
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        // --- ИНВЕНТАРЬ И ОРУЖИЕ ---
+        let currentWeaponIdx = 0;
+        const weapons = [
+            { name: "1. PIERCER", cdL: 0.2, cdR: 1.0, timerL: 0, timerR: 0 },
+            { name: "2. MARKSMAN", cdL: 0.25, cdR: 0.8, timerL: 0, timerR: 0 },
+            { name: "3. SHARPSHOOTER", cdL: 0.3, cdR: 1.2, timerL: 0, timerR: 0 },
+            { name: "4. CORE EJECT", cdL: 0.4, cdR: 1.5, timerL: 0, timerR: 0 },
+            { name: "5. JACKHAMMER", cdL: 0.6, cdR: 0.6, timerL: 0, timerR: 0 },
+            { name: "6. RED RAILCANNON", cdL: 3.0, cdR: 3.0, timerL: 0, timerR: 0 },
+            { name: "7. FREEZEFRAME", cdL: 0.5, cdR: 0.2, timerL: 0, timerR: 0 }
+        ];
+
+        function selectWeapon(idx) {
+            currentWeaponIdx = idx;
+            document.getElementById('weapon-name').innerText = weapons[idx].name;
+            for(let i=1; i<=7; i++) {
+                document.getElementById(`w${i}`).className = (i-1 === idx) ? 'active-weapon' : '';
+            }
+        }
+
+        // --- МАССИВЫ СУЩНОСТЕЙ И СИСТЕМЫ ---
+        const projectiles = [];
+        const coins = [];
+        const enemies = [];
+        const particles = [];
+
+        // Вспомогательная функция частиц
+        function spawnParticles(pos, color, count=10, speed=5) {
+            for(let i=0; i<count; i++) {
+                const pGeo = new THREE.BufferGeometry();
+                pGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0], 3));
+                const pMat = new THREE.PointsMaterial({ color: color, size: 0.3, transparent: true, opacity: 1 });
+                const p = new THREE.Points(pGeo, pMat);
+                p.position.copy(pos);
+                p.userData = {
+                    vel: new THREE.Vector3((Math.random()-0.5)*speed, (Math.random()-0.5)*speed, (Math.random()-0.5)*speed),
+                    life: 0.5
+                };
+                scene.add(p);
+                particles.push(p);
+            }
+        }
+
+        function createExplosion(pos, radius, damage, isNuke = false) {
+            spawnParticles(pos, isNuke ? 0xff0000 : 0xffaa00, isNuke ? 80 : 30, radius * 2);
+            
+            // Урон врагам
+            enemies.forEach(e => {
+                let dist = e.mesh.position.distanceTo(pos);
+                if(dist < radius) {
+                    let dmg = damage * (1 - dist/radius);
+                    e.takeDamage(dmg, "EXPLOSION");
+                }
+            });
+
+            // Урон/подброс игроку
+            let pDist = player.pos.distanceTo(pos);
+            if(pDist < radius) {
+                let push = new THREE.Vector3().subVectors(player.pos, pos).normalize().multiplyScalar(15 * (1 - pDist/radius));
+                player.vel.add(push);
+                player.hp -= Math.floor(10 * (1 - pDist/radius));
+            }
+        }
+
+        // --- ЛОГИКА ОРУЖИЯ ---
+        function fireWeapon() {
+            const w = weapons[currentWeaponIdx];
+            const raycaster = new THREE.Raycaster();
+            // Направление из камеры
+            raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+
+            const shootPos = player.pos.clone().add(new THREE.Vector3(0, 1.2, 0));
+            const dir = raycaster.ray.direction.clone();
+
+            // --- 1. PIERCER ---
+            if(currentWeaponIdx === 0) {
+                if(mouse.lmb && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    hitscan(shootPos, dir, 15, 1);
+                }
+                if(mouse.rmb && w.timerR <= 0) {
+                    w.timerR = w.cdR;
+                    hitscan(shootPos, dir, 30, 7); // Сквозь 7 врагов
+                    addStyle(15, "PIERCE SHOT");
+                }
+            }
+            // --- 2. MARKSMAN ---
+            else if(currentWeaponIdx === 1) {
+                if(mouse.lmb && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    hitscan(shootPos, dir, 20, 1);
+                }
+                if(mouse.rmb && w.timerR <= 0) {
+                    w.timerR = w.cdR;
+                    // Бросок монеты
+                    spawnCoin(shootPos, dir);
+                }
+            }
+            // --- 3. SHARPSHOOTER ---
+            else if(currentWeaponIdx === 2) {
+                if(mouse.lmb && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    hitscan(shootPos, dir, 25, 1);
+                }
+                if(mouse.rmb && w.timerR <= 0) {
+                    w.timerR = w.cdR;
+                    // Луч подрывает снаряды
+                    let hitProj = hitscan(shootPos, dir, 10, 1, true);
+                    projectiles.forEach((p, idx) => {
+                        let projDist = new THREE.Ray(shootPos, dir).distanceToPoint(p.mesh.position);
+                        if(projDist < 2.0) {
+                            createExplosion(p.mesh.position, 6, 40);
+                            scene.remove(p.mesh);
+                            projectiles.splice(idx, 1);
+                            addStyle(30, "DISARMED");
+                        }
+                    });
+                }
+            }
+            // --- 4. CORE EJECT ---
+            else if(currentWeaponIdx === 3) {
+                if(mouse.lmb && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    // Дробь (8 проджектайлов)
+                    let isExplosive = w.parryShotNext;
+                    w.parryShotNext = false;
+                    for(let i=0; i<8; i++) {
+                        let spreadDir = dir.clone().add(new THREE.Vector3((Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1, (Math.random()-0.5)*0.1)).normalize();
+                        spawnProjectile(shootPos, spreadDir, 40, "pellet", { damage: 6, explosive: isExplosive });
+                    }
+                }
+                if(mouse.rmb && w.timerR <= 0) {
+                    w.timerR = w.cdR;
+                    // Ядро (Core)
+                    spawnProjectile(shootPos, dir, 25, "core", { damage: 20 });
+                    // Парирование дроби (если ПКМ сразу после ЛКМ)
+                    if(w.timerL > 0.2) {
+                        w.parryShotNext = true;
+                        addStyle(20, "PROJECTILE BOOST");
+                    }
+                }
+            }
+            // --- 5. JACKHAMMER ---
+            else if(currentWeaponIdx === 4) {
+                if((mouse.lmb || mouse.rmb) && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    let speed = player.vel.length();
+                    let damage = 20 + speed * 2.5;
+                    let hit = false;
+                    enemies.forEach(e => {
+                        if(e.mesh.position.distanceTo(player.pos) < 3.5) {
+                            e.takeDamage(damage, "JACKHAMMER");
+                            let push = dir.clone().multiplyScalar(damage * 0.8);
+                            e.vel.add(push);
+                            hit = true;
+                        }
+                    });
+                    if(hit) addStyle(25, "PUNCH");
+                }
+            }
+            // --- 6. RED RAILCANNON ---
+            else if(currentWeaponIdx === 5) {
+                if(mouse.lmb && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    w.timerR = w.cdR;
+                    // Выстрел рельсотрона
+                    let targetCore = null;
+                    projectiles.forEach(p => {
+                        if(p.type === "core") {
+                            let dist = new THREE.Ray(shootPos, dir).distanceToPoint(p.mesh.position);
+                            if(dist < 1.5) targetCore = p;
+                        }
+                    });
+
+                    if(targetCore) {
+                        // ЯДЕРНЫЙ ВЗРЫВ (Core Nuke)
+                        createExplosion(targetCore.mesh.position, 20, 150, true);
+                        scene.remove(targetCore.mesh);
+                        projectiles.splice(projectiles.indexOf(targetCore), 1);
+                        addStyle(100, "CORE NUKE!");
+                    } else {
+                        hitscan(shootPos, dir, 50, 99);
+                    }
+                    spawnParticles(shootPos.clone().add(dir.clone().multiplyScalar(10)), 0xff0000, 40, 10);
+                }
+            }
+            // --- 7. FREEZEFRAME ---
+            else if(currentWeaponIdx === 6) {
+                if(mouse.lmb && w.timerL <= 0) {
+                    w.timerL = w.cdL;
+                    spawnProjectile(shootPos, dir, 20, "rocket", { damage: 35, frozen: false, freezeTimer: 0 });
+                }
+                if(mouse.rmbPressed) {
+                    // Заморозка ракет
+                    projectiles.forEach(p => {
+                        if(p.type === "rocket") {
+                            p.data.frozen = !p.data.frozen;
+                        }
+                    });
+                    addStyle(10, "FREEZE");
+                }
+            }
+        }
+
+        // --- ХИТСКАН И МОНЕТЫ ---
+        function hitscan(origin, dir, damage, maxTargets = 1, returnHit = false) {
+            const ray = new THREE.Raycaster(origin, dir, 0, 200);
+            
+            // Проверка монет
+            let coinHits = ray.intersectObjects(coins.map(c => c.mesh));
+            if(coinHits.length > 0) {
+                let coin = coins.find(c => c.mesh === coinHits[0].object);
+                if(coin) {
+                    coin.ricochet(damage);
+                    return;
+                }
+            }
+
+            // Проверка Ядер (Core Eject)
+            let projHits = ray.intersectObjects(projectiles.filter(p => p.type === 'core').map(p => p.mesh));
+            if(projHits.length > 0) {
+                let p = projectiles.find(pr => pr.mesh === projHits[0].object);
+                if(p) {
+                    createExplosion(p.mesh.position, 8, 60);
+                    scene.remove(p.mesh);
+                    projectiles.splice(projectiles.indexOf(p), 1);
+                    addStyle(40, "CORE POP");
+                    return;
+                }
+            }
+
+            // Проверка врагов
+            let enemyMeshes = [];
+            enemies.forEach(e => enemyMeshes.push(e.mesh));
+            let hits = ray.intersectObjects(enemyMeshes);
+
+            let hitCount = 0;
+            for(let i=0; i<hits.length; i++) {
+                let enemy = enemies.find(e => e.mesh === hits[i].object);
+                if(enemy) {
+                    enemy.takeDamage(damage, "HITSCAN");
+                    spawnParticles(hits[i].point, 0xff0000, 5, 2);
+                    hitCount++;
+                    if(hitCount >= maxTargets) break;
+                }
+            }
+
+            // Визуальный луч
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([origin, origin.clone().add(dir.clone().multiplyScalar(100))]);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x00f3ff });
+            const line = new THREE.Line(lineGeo, lineMat);
+            scene.add(line);
+            setTimeout(() => scene.remove(line), 50);
+
+            return hits;
+        }
+
+        function spawnCoin(pos, dir) {
+            const geo = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 8);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(pos);
+            scene.add(mesh);
+
+            const coin = {
+                mesh: mesh,
+                vel: dir.clone().multiplyScalar(12).add(new THREE.Vector3(0, 5, 0)),
+                life: 3.0,
+                flashTimer: 0,
+                ricochet: function(baseDmg) {
+                    scene.remove(this.mesh);
+                    coins.splice(coins.indexOf(this), 1);
+                    
+                    // Самонаводящаяся пуля
+                    let target = getClosestEnemy(this.mesh.position);
+                    let targetDir = target ? new THREE.Vector3().subVectors(target.mesh.position, this.mesh.position).normalize() : camera.getWorldDirection(new THREE.Vector3());
+
+                    // Блеск монеты (сплит на 2)
+                    if(Math.sin(this.flashTimer * 20) > 0.5) {
+                        addStyle(50, "SPLITSHOT!");
+                        hitscan(this.mesh.position, targetDir.clone().add(new THREE.Vector3(0.1,0,0)), baseDmg * 1.5);
+                        hitscan(this.mesh.position, targetDir.clone().add(new THREE.Vector3(-0.1,0,0)), baseDmg * 1.5);
+                    } else {
+                        addStyle(25, "RICOCHET");
+                        hitscan(this.mesh.position, targetDir, baseDmg * 1.5);
+                    }
+                }
+            };
+            coins.push(coin);
+        }
+
+        function getClosestEnemy(pos) {
+            let closest = null;
+            let minDist = Infinity;
+            enemies.forEach(e => {
+                let d = e.mesh.position.distanceTo(pos);
+                if(d < minDist) { minDist = d; closest = e; }
+            });
+            return closest;
+        }
+
+        // --- СНАРЯДЫ (PROJECTILES) ---
+        function spawnProjectile(pos, dir, speed, type, data = {}) {
+            let geo, mat;
+            if(type === 'pellet') { geo = new THREE.SphereGeometry(0.15); mat = new THREE.MeshBasicMaterial({color: 0xffff00}); }
+            else if(type === 'core') { geo = new THREE.SphereGeometry(0.4); mat = new THREE.MeshBasicMaterial({color: 0xff5500}); }
+            else if(type === 'rocket') { geo = new THREE.CylinderGeometry(0.2,0.2,0.8); mat = new THREE.MeshBasicMaterial({color: 0x00ff00}); }
+            else if(type === 'enemy_bullet') { geo = new THREE.SphereGeometry(0.25); mat = new THREE.MeshBasicMaterial({color: 0xff0055}); }
+
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(pos);
+            if(type === 'rocket') mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+            scene.add(mesh);
+
+            projectiles.push({
+                mesh: mesh,
+                dir: dir,
+                speed: speed,
+                type: type,
+                data: data,
+                life: 5.0
+            });
+        }
+
+        // --- ПАРИРОВАНИЕ ---
+        function triggerParry() {
+            if(player.parryTimer <= 0) {
+                player.parryTimer = 0.3; // 0.3с окно
+                const ind = document.getElementById('parry-indicator');
+                ind.style.opacity = 1;
+                setTimeout(() => ind.style.opacity = 0, 300);
+            }
+        }
+
+        // --- КЛАССЫ ВРАГОВ ---
+        class Enemy {
+            constructor(type, pos) {
+                this.type = type;
+                this.hp = type === 'filth' ? 30 : (type === 'stray' ? 40 : (type === 'zoick' ? 60 : 250));
+                this.maxHp = this.hp;
+                this.vel = new THREE.Vector3();
+                this.attackTimer = 0;
+                this.phase = 1;
+
+                let geo, matColor;
+                if(type === 'filth') { geo = new THREE.BoxGeometry(1, 1, 1); matColor = 0x00ffaa; }
+                else if(type === 'stray') { geo = new THREE.CylinderGeometry(0.5,0.5,1.8); matColor = 0xffaa00; }
+                else if(type === 'zoick') { geo = new THREE.BoxGeometry(1.2, 2, 1.2); matColor = 0xaa00ff; }
+                else if(type === 'boss') { geo = new THREE.OctahedronGeometry(2); matColor = 0xff0000; }
+
+                this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: matColor }));
+                this.mesh.position.copy(pos);
+                this.mesh.castShadow = true;
+                scene.add(this.mesh);
+            }
+
+            update(dt) {
+                let toPlayer = new THREE.Vector3().subVectors(player.pos, this.mesh.position);
+                let dist = toPlayer.length();
+                toPlayer.normalize();
+
+                this.attackTimer += dt;
+
+                // Поведение по типам
+                if(this.type === 'filth') {
+                    // Псы: бегают и прыгают
+                    if(dist > 2) {
+                        this.mesh.position.add(toPlayer.clone().multiplyScalar(8 * dt));
+                    } else if(this.attackTimer > 1.5) {
+                        this.attackTimer = 0;
+                        // Атака прыжком
+                        this.vel.add(toPlayer.clone().multiplyScalar(10).add(new THREE.Vector3(0,5,0)));
+                        if(player.parryTimer > 0 && dist < 2.5) {
+                            this.takeDamage(50, "PARRY!");
+                            addStyle(40, "PARRY");
+                        } else if(dist < 2.0) {
+                            player.hp -= 15;
+                        }
+                    }
+                } 
+                else if(this.type === 'stray') {
+                    // Стрелки
+                    if(dist > 12) this.mesh.position.add(toPlayer.clone().multiplyScalar(5 * dt));
+                    if(this.attackTimer > 2.5) {
+                        this.attackTimer = 0;
+                        spawnProjectile(this.mesh.position.clone(), toPlayer, 15, 'enemy_bullet');
+                    }
+                }
+                else if(this.type === 'zoick') {
+                    // Комбинированный
+                    if(dist > 5) this.mesh.position.add(toPlayer.clone().multiplyScalar(6 * dt));
+                    if(this.attackTimer > 2.0) {
+                        this.attackTimer = 0;
+                        if(dist < 4) { player.hp -= 20; } // Ближний бой
+                        else spawnProjectile(this.mesh.position.clone(), toPlayer, 20, 'enemy_bullet');
+                    }
+                }
+                else if(this.type === 'boss') {
+                    // БОСС
+                    if(this.hp < this.maxHp * 0.5 && this.phase === 1) {
+                        this.phase = 2;
+                        addStyle(100, "BOSS PHASE 2");
+                    }
+                    let speed = this.phase === 2 ? 10 : 6;
+                    if(dist > 8) this.mesh.position.add(toPlayer.clone().multiplyScalar(speed * dt));
+
+                    if(this.attackTimer > (this.phase === 2 ? 1.5 : 2.5)) {
+                        this.attackTimer = 0;
+                        // Кольцо из 8 снарядов
+                        for(let i=0; i<8; i++) {
+                            let angle = (i / 8) * Math.PI * 2;
+                            let bDir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+                            spawnProjectile(this.mesh.position.clone(), bDir, 12, 'enemy_bullet');
+                        }
+                    }
+                }
+
+                // Гравитация и инерция
+                this.vel.y -= 20 * dt;
+                this.mesh.position.add(this.vel.clone().multiplyScalar(dt));
+                if(this.mesh.position.y < 1) {
+                    this.mesh.position.y = 1;
+                    this.vel.y = 0;
+                }
+            }
+
+            takeDamage(amount, source="") {
+                this.hp -= amount;
+                if(this.type === 'boss') {
+                    // Телепортация при уроне
+                    this.mesh.position.x += (Math.random()-0.5)*10;
+                    this.mesh.position.z += (Math.random()-0.5)*10;
+                }
+                spawnParticles(this.mesh.position, 0xff0000, 8, 4);
+                if(this.hp <= 0) {
+                    scene.remove(this.mesh);
+                    enemies.splice(enemies.indexOf(this), 1);
+                    addStyle(Math.floor(this.maxHp / 2), "KILL " + this.type.toUpperCase());
+                }
+            }
+        }
+
+        // --- СПАВН ВОЛН ---
+        function spawnWave() {
+            let count = wave * 3 + 2;
+            for(let i=0; i<count; i++) {
+                let types = ['filth', 'stray', 'zoick'];
+                let t = types[Math.floor(Math.random()*types.length)];
+                let pos = new THREE.Vector3((Math.random()-0.5)*(arenaSize-20), 1, (Math.random()-0.5)*(arenaSize-20));
+                enemies.push(new Enemy(t, pos));
+            }
+        }
+        spawnWave();
+
+        function spawnBoss() {
+            let pos = new THREE.Vector3(0, 2, -20);
+            enemies.push(new Enemy('boss', pos));
+            addStyle(200, "BOSS APPROACHING!");
+        }
+
+        // --- СИСТЕМА СТИЛЯ ---
+        const styleRanks = ["D", "C", "B", "A", "S", "SS", "SSS", "ULTRAKILL"];
+        function addStyle(pts, text) {
+            stylePoints += pts;
+            player.speedBuff = 1.0 + Math.min(stylePoints / 1000, 0.5); // Бафф скорости
+        }
+
+        function updateStyleUI() {
+            let rankIdx = Math.min(Math.floor(stylePoints / 150), styleRanks.length - 1);
+            document.getElementById('style-rank').innerText = styleRanks[rankIdx];
+            document.getElementById('style-score').innerText = stylePoints;
+        }
+
+        // --- ОСНОВНОЙ ФИЗИЧЕСКИЙ ЦИКЛ И ОБНОВЛЕНИЕ ИГРОКА ---
+        function updatePlayer(dt) {
+            // Перезарядки
+            if(player.dashCooldown > 0) player.dashCooldown -= dt;
+            if(player.parryTimer > 0) player.parryTimer -= dt;
+            weapons.forEach(w => {
+                if(w.timerL > 0) w.timerL -= dt;
+                if(w.timerR > 0) w.timerR -= dt;
+            });
+
+            // Направление движения относительно камеры
+            let moveDir = new THREE.Vector3();
+            if(keys['KeyW']) moveDir.z -= 1;
+            if(keys['KeyS']) moveDir.z += 1;
+            if(keys['KeyA']) moveDir.x -= 1;
+            if(keys['KeyD']) moveDir.x += 1;
+            moveDir.normalize();
+
+            let camRotation = new THREE.Euler(0, camYaw, 0, 'YXZ');
+            moveDir.applyEuler(camRotation);
+
+            // Скорость движения
+            let speed = 12 * player.speedBuff;
+
+            // --- СЛАЙД / СЛЭМ / ДЭШ ---
+            if(keys['Shift'] && player.dashCooldown <= 0) {
+                player.dashCooldown = 0.5;
+                player.vel.add(moveDir.length() > 0 ? moveDir.clone().multiplyScalar(25) : camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(25));
+                addStyle(10, "DASH");
+            }
+
+            // Слайд (Ctrl на земле)
+            if(keys['ControlLeft'] && player.isGrounded) {
+                player.isSliding = true;
+                speed *= 1.6;
+            } else {
+                player.isSliding = false;
+            }
+
+            // Прыжок
+            if(keys['Space'] && player.isGrounded) {
+                player.vel.y = 12;
+                if(player.isSliding) player.vel.add(moveDir.clone().multiplyScalar(10)); // Ускорение со слайда
+                player.isGrounded = false;
+            }
+
+            // Слэм (Ctrl в воздухе)
+            if(keys['ControlLeft'] && !player.isGrounded) {
+                player.vel.y = -35;
+                player.isSlamming = true;
+            }
+
+            // Базовое перемещение
+            if(player.isGrounded) {
+                player.vel.x = moveDir.x * speed;
+                player.vel.z = moveDir.z * speed;
+            } else {
+                // Воздушный контроль
+                player.vel.x += moveDir.x * speed * 2 * dt;
+                player.vel.z += moveDir.z * speed * 2 * dt;
+            }
+
+            // Гравитация
+            player.vel.y -= 30 * dt;
+
+            // Езда на ракете
+            if(player.ridingRocket) {
+                player.pos.copy(player.ridingRocket.mesh.position).add(new THREE.Vector3(0, 1.2, 0));
+                player.vel.set(0,0,0);
+                if(keys['Space']) {
+                    player.ridingRocket = null;
+                    player.vel.y = 15;
+                }
+            } else {
+                player.pos.add(player.vel.clone().multiplyScalar(dt));
+            }
+
+            // Коллизии с полом
+            if(player.pos.y <= 0) {
+                player.pos.y = 0;
+                player.isGrounded = true;
+                player.vel.y = 0;
+
+                if(player.isSlamming) {
+                    player.isSlamming = false;
+                    // Ударная волна слэма
+                    createExplosion(player.pos, 8, 30);
+                    enemies.forEach(e => {
+                        if(e.mesh.position.distanceTo(player.pos) < 8) e.vel.y = 15; // Подбрасывание
+                    });
+                    addStyle(30, "SLAM SHOCKWAVE");
+                }
+            }
+
+            // Коллизии со стенами
+            let bound = arenaSize/2 - 1;
+            player.pos.x = Math.max(-bound, Math.min(bound, player.pos.x));
+            player.pos.z = Math.max(-bound, Math.min(bound, player.pos.z));
+
+            // Обновление положения меша игрока
+            playerGroup.position.copy(player.pos);
+
+            // Позиция камеры (Third Person Orbit)
+            let camOffset = new THREE.Vector3(0, 1.5, camDistance);
+            camOffset.applyEuler(new THREE.Euler(camPitch, camYaw, 0, 'YXZ'));
+            camera.position.copy(player.pos).add(camOffset);
+            camera.lookAt(player.pos.clone().add(new THREE.Vector3(0, 1.5, 0)));
+
+            // Огонь оружия
+            if(mouse.lmb || mouse.rmb) fireWeapon();
+            mouse.lmbPressed = false;
+            mouse.rmbPressed = false;
+        }
+
+        // --- ЦИКЛ ОБНОВЛЕНИЯ СНАРЯДОВ И МОНЕТ ---
+        function updateProjectiles(dt) {
+            // Снаряды
+            for(let i = projectiles.length - 1; i >= 0; i--) {
+                let p = projectiles[i];
+                p.life -= dt;
+
+                if(p.type === 'rocket' && p.data.frozen) {
+                    p.data.freezeTimer += dt;
+                    // Можно запрыгнуть на замороженную ракету
+                    if(player.pos.distanceTo(p.mesh.position) < 1.5 && !player.ridingRocket) {
+                        player.ridingRocket = p;
+                        addStyle(30, "ROCKET RIDE!");
+                    }
+                } else {
+                    p.mesh.position.add(p.dir.clone().multiplyScalar(p.speed * dt));
+                }
+
+                // Взаимодействия снарядов
+                if(p.type === 'enemy_bullet') {
+                    // Парирование
+                    if(player.parryTimer > 0 && player.pos.distanceTo(p.mesh.position) < 2.5) {
+                        p.dir.negate();
+                        p.speed *= 2;
+                        p.type = 'pellet';
+                        addStyle(50, "PARRY!");
+                        continue;
+                    }
+                    // Попадание в игрока
+                    if(player.pos.distanceTo(p.mesh.position) < 1.2) {
+                        player.hp -= 10;
+                        scene.remove(p.mesh);
+                        projectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if(p.type === 'pellet' || p.type === 'rocket') {
+                    // Попадание во врагов
+                    enemies.forEach(e => {
+                        if(e.mesh.position.distanceTo(p.mesh.position) < 1.5) {
+                            let dmg = p.data.damage || 15;
+                            if(p.data.frozen && p.data.freezeTimer > 1.0) dmg *= 2; // Усиленный взрыв
+                            
+                            if(p.type === 'rocket' || p.data.explosive) {
+                                createExplosion(p.mesh.position, 6, dmg);
+                            } else {
+                                e.takeDamage(dmg, "PROJECTILE");
+                            }
+                            p.life = -1;
+                        }
+                    });
+                }
+
+                if(p.life <= 0) {
+                    if(player.ridingRocket === p) player.ridingRocket = null;
+                    scene.remove(p.mesh);
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // Монеты
+            for(let i = coins.length - 1; i >= 0; i--) {
+                let c = coins[i];
+                c.life -= dt;
+                c.flashTimer += dt;
+                c.vel.y -= 15 * dt;
+                c.mesh.position.add(c.vel.clone().multiplyScalar(dt));
+
+                // Блеск
+                if(Math.sin(c.flashTimer * 20) > 0.8) {
+                    c.mesh.material.color.setHex(0xffffff);
+                } else {
+                    c.mesh.material.color.setHex(0xffd700);
+                }
+
+                if(c.mesh.position.y <= 0 || c.life <= 0) {
+                    scene.remove(c.mesh);
+                    coins.splice(i, 1);
+                }
+            }
+
+            // Частицы
+            for(let i = particles.length - 1; i >= 0; i--) {
+                let pt = particles[i];
+                pt.userData.life -= dt;
+                pt.position.add(pt.userData.vel.clone().multiplyScalar(dt));
+                pt.material.opacity = pt.userData.life / 0.5;
+                if(pt.userData.life <= 0) {
+                    scene.remove(pt);
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // --- ИГРОВОЙ ЦИКЛ (GAMELOOP) ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!gameStarted) return;
+
+            const dt = Math.min(clock.getDelta(), 0.1);
+
+            // Таймеры спавна и босса
+            bossTimer -= dt;
+            if(bossTimer <= 0) {
+                bossTimer = 120;
+                spawnBoss();
+            }
+            document.getElementById('boss-timer').innerText = Math.ceil(bossTimer);
+
+            if(enemies.length === 0) {
+                wave++;
+                spawnWave();
+            }
+
+            // Обновления
+            updatePlayer(dt);
+            updateProjectiles(dt);
+            enemies.forEach(e => e.update(dt));
+
+            // Затухание очков стиля
+            if(stylePoints > 0) stylePoints -= dt * 10;
+
+            // Обновление HUD
+            document.getElementById('hp-val').innerText = Math.max(0, Math.floor(player.hp));
+            document.getElementById('hp-bar').style.width = Math.max(0, (player.hp / player.maxHp * 100)) + '%';
+            document.getElementById('dash-fill').style.width = Math.max(0, (1 - player.dashCooldown / 0.5) * 100) + '%';
+            document.getElementById('wave-val').innerText = wave;
+            document.getElementById('enemies-val').innerText = enemies.length;
+            updateStyleUI();
+
+            // Проверка Смерти
+            if(player.hp <= 0) {
+                alert("GAME OVER! WAVE: " + wave + " SCORE: " + Math.floor(stylePoints));
+                location.reload();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Адаптация под размер окна (Горизонтальный/Вертикальный экран)
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Запуск
+        animate();
+    </script>
+</body>
+</html>
